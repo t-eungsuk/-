@@ -1,83 +1,50 @@
-import { createClient } from '@supabase/supabase-js';
+
 import { LeaderboardEntry, GameHistory } from '../types';
 
-// NOTE: In a real deployment, these would come from process.env
-const SUPABASE_URL = process.env.SUPABASE_URL || ''; 
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
-
-const isConfigured = SUPABASE_URL && SUPABASE_ANON_KEY;
-
-const supabase = isConfigured 
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
-  : null;
+// 아래 주소에 본인이 2단계에서 복사한 웹 앱 URL을 꼭! 붙여넣으세요.
+const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbw49zVCUyOQD_DLdOxKqgAUqmWVWwll_swDiMAebcpEnDCfV7-895536cyxJkoSG8xf/exec';
 
 export const supabaseService = {
   async getLeaderboard(): Promise<LeaderboardEntry[]> {
-    if (!supabase) {
-      // Mock data updated to Mario characters
-      return [
-        { id: '1', nickname: '마리오', score: 5000, created_at: new Date().toISOString() },
-        { id: '2', nickname: '쿠파', score: 4500, created_at: new Date().toISOString() },
-        { id: '3', nickname: '키노피오', score: 4000, created_at: new Date().toISOString() },
-      ];
-    }
-
-    const { data, error } = await supabase
-      .from('leaderboard')
-      .select('*')
-      .order('score', { ascending: false })
-      .limit(10);
-
-    if (error) {
-      console.error('Error fetching leaderboard:', error);
-      return [];
-    }
-    return data as LeaderboardEntry[];
+    try {
+      const response = await fetch(GOOGLE_SHEETS_URL);
+      const data = await response.json();
+      return data
+        .map((item: any, index: number) => ({
+          id: String(index),
+          nickname: item.nickname || '익명',
+          score: Number(item.score) || 0,
+          created_at: `${item.date} ${item.time}`
+        }))
+        .sort((a: any, b: any) => b.score - a.score).slice(0, 10);
+    } catch (e) { return []; }
   },
 
   async getGameHistory(nickname: string): Promise<GameHistory[]> {
-    if (!supabase) {
-        // Mock History
-        return [
-            { id: '101', nickname, score: 300, word: '사자', category: '동물', played_at: new Date(Date.now() - 10000000).toISOString() },
-            { id: '102', nickname, score: 450, word: '나비', category: '동물', played_at: new Date(Date.now() - 5000000).toISOString() },
-            { id: '103', nickname, score: 200, word: '가', category: '기본', played_at: new Date(Date.now() - 100000).toISOString() },
-        ];
-    }
-
-    const { data, error } = await supabase
-        .from('game_history')
-        .select('*')
-        .eq('nickname', nickname)
-        .order('played_at', { ascending: false });
-
-    if (error) {
-        console.error('Error fetching history:', error);
-        return [];
-    }
-    return data as GameHistory[];
+    try {
+      const response = await fetch(GOOGLE_SHEETS_URL);
+      const data = await response.json();
+      return data
+        .filter((item: any) => item.nickname === nickname)
+        .map((item: any, index: number) => ({
+          id: String(index),
+          nickname: item.nickname,
+          score: Number(item.score),
+          word: item.word,
+          category: item.category,
+          played_at: `${item.date} ${item.time}`,
+          ai_analysis: item.ai_analysis
+        })).reverse();
+    } catch (e) { return []; }
   },
 
   async saveGameRecord(nickname: string, score: number, word: string, category: string): Promise<void> {
-    if (!supabase) {
-      console.log(`[MOCK DB] Saved record: ${nickname} - ${word} (${score})`);
-      return;
-    }
-
-    // 1. Save to History
-    const { error: historyError } = await supabase
-        .from('game_history')
-        .insert([{ nickname, score, word, category, played_at: new Date().toISOString() }]);
-
-    if (historyError) console.error('Error saving history:', historyError);
-
-    // 2. Update Leaderboard (Simple max score logic or just insert new entry)
-    const { error: lbError } = await supabase
-      .from('leaderboard')
-      .insert([{ nickname, score }]);
-
-    if (lbError) {
-      console.error('Error saving leaderboard:', lbError);
-    }
+    try {
+      await fetch(GOOGLE_SHEETS_URL, {
+        method: 'POST',
+        mode: 'no-cors', // 구글 스크립트 특성상 필수 설정
+        body: JSON.stringify({ nickname, score, word, category })
+      });
+    } catch (e) { console.error("저장 실패", e); }
   }
 };

@@ -18,14 +18,14 @@ export interface PlayerState {
   width: number;
   height: number;
   isGrounded: boolean;
-  jumpCount: number; // For double jump
+  jumpCount: number;
   facingRight: boolean;
   isDead: boolean;
   state: 'idle' | 'walk' | 'jump' | 'die';
   frameTimer: number;
   currentFrame: number;
-  invulnerableTimer: number; // Post-damage invincibility
-  starTimer: number; // Star Power invincibility (frames)
+  invulnerableTimer: number;
+  starTimer: number;
 }
 
 export type HiddenItemType = 'none' | 'coin_multi' | 'star' | 'mushroom' | 'rain';
@@ -37,16 +37,14 @@ export interface Block {
   width: number;
   height: number;
   type: 'yellow' | 'red' | 'ground' | 'pipe' | 'grass-plat' | 'finish' | 'breakable';
-  content?: string; // Character or 'COIN' or null
+  content?: string;
   isHit: boolean;
-  bumpY: number; // For animation when hit
-  hp?: number;    // Added for durability
-  maxHp?: number; // Added for max durability
-  
-  // Hidden Block Properties
+  bumpY: number;
+  hp?: number;
+  maxHp?: number;
   hiddenType?: HiddenItemType;
-  hitCount?: number; // For multi-hit blocks
-  maxHits?: number;  // Max hits for multi-hit blocks
+  hitCount?: number;
+  maxHits?: number;
 }
 
 export interface Collectible {
@@ -58,7 +56,7 @@ export interface Collectible {
   width: number;
   height: number;
   type: 'coin' | 'mushroom' | 'star';
-  life: number; // Frames remaining
+  life: number;
 }
 
 export interface Enemy {
@@ -70,7 +68,7 @@ export interface Enemy {
   vx: number;
   isDead: boolean;
   typeIndex: number;
-  deadTimer: number; // Time before removing dead body
+  deadTimer: number;
 }
 
 export interface Particle {
@@ -80,16 +78,16 @@ export interface Particle {
   vx: number;
   vy: number;
   life: number;
-  text?: string; // For floating text
+  text?: string;
   color?: string;
-  image?: HTMLImageElement; // Added for image particles (debris)
+  image?: HTMLImageElement;
   width?: number;
   height?: number;
 }
 
 export interface WordData {
   word: string; 
-  syllables: string[]; // For Basic, this is [Consonant, Vowel]. For others, it's syllables.
+  syllables: string[];
   hint: string; 
   category: string;
 }
@@ -108,6 +106,7 @@ export interface GameHistory {
   word: string;
   category: string;
   played_at: string;
+  ai_analysis?: string; // AI가 생성한 교사용 분석 코멘트
 }
 
 export const ASSETS = {
@@ -139,10 +138,10 @@ export const ASSETS = {
     star: 'https://i.imgur.com/73y838r.png'
   },
   ui: {
-    btnBasic: 'https://i.imgur.com/t2LaK29.png', // Updated Basic Hangul Button
-    bossKoopa: 'https://i.imgur.com/JJQ4gOO.png',  // Bowser
-    mushroom: 'https://i.imgur.com/s1PUSIe.png', // Toad Updated Check (Fixed URL)
-    btnBack: 'https://i.imgur.com/11aBhUf.png', // New Back Button
-    btnHome: 'https://i.imgur.com/HTxI623.png'  // New Home Button
+    btnBasic: 'https://i.imgur.com/t2LaK29.png',
+    bossKoopa: 'https://i.imgur.com/JJQ4gOO.png',
+    mushroom: 'https://i.imgur.com/s1PUSIe.png',
+    btnBack: 'https://i.imgur.com/11aBhUf.png',
+    btnHome: 'https://i.imgur.com/HTxI623.png'
   }
 };

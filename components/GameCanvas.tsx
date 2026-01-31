@@ -10,6 +10,7 @@ interface GameCanvasProps {
   isBossLevel?: boolean;
   isBonusLevel?: boolean;
   gameSpeed: number;
+  difficulty?: 'easy' | 'hard'; // 난이도 Prop 추가
   initialLives: number;
   onGameOver: (success: boolean, stats?: { timeLeft: number }) => void;
   onUpdateScore: (points: number) => void;
@@ -39,7 +40,7 @@ const MAX_TIME = 180;
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({ 
   wordData, theme, backgroundImage, isBossLevel = false, isBonusLevel = false,
-  gameSpeed, initialLives, onGameOver, onUpdateScore, onCollect, onLivesChange, goHome
+  gameSpeed, difficulty = 'easy', initialLives, onGameOver, onUpdateScore, onCollect, onLivesChange, goHome
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,10 +75,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const [lives, setLives] = useState(initialLives);
   const [timeLeft, setTimeLeft] = useState(MAX_TIME);
   const [isPaused, setIsPaused] = useState(false);
+  
+  // 신규: 글자 수집 및 콤보 관련 상태
+  const [collectedInCycle, setCollectedInCycle] = useState<string[]>([]);
+  const [completionCount, setCompletionCount] = useState(0);
 
-  const currentMoveSpeed = BASE_MOVE_SPEED * (gameSpeed === 2 ? 1.4 : 1);
-  const currentEnemySpeed = BASE_ENEMY_SPEED * (gameSpeed === 2 ? 1.4 : 1);
-  const scoreMultiplier = gameSpeed === 2 ? 2 : 1;
+  // 난이도 및 콤보 배율 계산
+  const isHard = difficulty === 'hard';
+  const speedMultiplier = isHard ? 1.6 : 1.0; 
+  const currentMoveSpeed = BASE_MOVE_SPEED * speedMultiplier;
+  const currentEnemySpeed = BASE_ENEMY_SPEED * (isHard ? 2.0 : 1.0);
+  
+  const baseScoreMult = isHard ? 2 : 1;
+  const comboMult = completionCount >= 3 ? 3 : (completionCount >= 2 ? 2 : 1);
+  const totalScoreMult = baseScoreMult * comboMult;
 
   // Handle Resize and Orientation
   useEffect(() => {
@@ -164,7 +175,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   useEffect(() => {
     const items: Block[] = []; const enemies: Enemy[] = [];
     const syllables = wordData.syllables.length > 0 ? wordData.syllables : ['코', '인'];
-    const TARGET_RED_COUNT = Math.max(syllables.length, 6); 
+    // 단어 완성을 여러 번 할 수 있도록 글자 블록을 충분히 생성 (최소 3~4세트)
+    const TARGET_RED_COUNT = Math.max(syllables.length * 4, 12); 
     let redBlockContents: string[] = []; 
     let redIndices = new Set<number>();
     
@@ -172,13 +184,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         while (redBlockContents.length < TARGET_RED_COUNT) {
             redBlockContents.push(...syllables);
         }
-        redBlockContents = redBlockContents.slice(0, TARGET_RED_COUNT).sort(() => Math.random() - 0.5);
-        while(redIndices.size < TARGET_RED_COUNT) redIndices.add(Math.floor(Math.random() * 30) + 2);
+        redBlockContents = redBlockContents.sort(() => Math.random() - 0.5);
+        while(redIndices.size < TARGET_RED_COUNT) redIndices.add(Math.floor(Math.random() * 60) + 2);
     }
 
     const stageEnemyType = Math.floor(Math.random() * 4);
     let currentX = 500; 
-    const totalItems = isBonusLevel ? 60 : 35;
+    const totalItems = isBonusLevel ? 80 : 65; // 아이템 총량 증가
     let starsPlaced = 0; 
     let mushroomsPlaced = 0;
 
@@ -188,7 +200,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       let hiddenType: HiddenItemType = 'none'; 
       let maxHits = 0;
 
-      if (!isBonusLevel && !isBossLevel && redIndices.has(i)) { 
+      if (!isBonusLevel && !isBossLevel && redBlockContents.length > 0 && Math.random() < 0.25) { 
           type = 'red'; 
           content = redBlockContents.pop(); 
       } else {
@@ -246,6 +258,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     cameraXRef.current = 0;
     cameraYRef.current = (GROUND_Y - 60) - (DESIGN_HEIGHT * 0.5); 
     setLives(initialLives); setTimeLeft(MAX_TIME);
+    setCollectedInCycle([]); setCompletionCount(0); // Reset collection state
   }, [wordData, isBossLevel, isBonusLevel, currentEnemySpeed]);
 
   const performJump = useCallback(() => {
@@ -266,9 +279,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       setIsPaused(true); playSound('clear');
       addShake(12);
       let mult = 1; if (timeLeft > 100) mult = 3; else if (timeLeft > 50) mult = 2;
-      onUpdateScore(1000 * mult * scoreMultiplier);
+      onUpdateScore(1000 * mult * totalScoreMult);
       setTimeout(() => onGameOver(true, { timeLeft }), 2800);
-  }, [timeLeft, scoreMultiplier, onGameOver, onUpdateScore]);
+  }, [timeLeft, totalScoreMult, onGameOver, onUpdateScore]);
 
   const updatePhysics = useCallback(() => {
     const p = playerRef.current;
@@ -320,7 +333,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       if (p.x < c.x + c.width && p.x + p.width > c.x && p.y < c.y + c.height && p.y + p.height > c.y) {
         if (c.type === 'coin') {
           playSound('coin');
-          onUpdateScore(20 * scoreMultiplier);
+          onUpdateScore(20 * totalScoreMult);
         } else if (c.type === 'mushroom') {
           playSound('coin');
           setLives(v => Math.min(v + 1, 5));
@@ -367,7 +380,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                            for(let k=0; k<count; k++) {
                              spawnCollectible(block.x + 15, block.y - 40, 'coin', (Math.random()-0.5)*10, -8 - Math.random()*6);
                            }
-                           onUpdateScore(10 * scoreMultiplier); 
+                           onUpdateScore(10 * totalScoreMult); 
                        } else if (block.hiddenType === 'star') {
                            block.isHit = true;
                            spawnCollectible(block.x + 15, block.y - 40, 'star', 0, -8);
@@ -377,18 +390,47 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                        } else if (block.hiddenType === 'rain') {
                            block.isHit = true;
                            for(let k=0; k<15; k++) spawnCollectible(p.x+(Math.random()-0.5)*600, -200, 'coin', 0, 7);
-                           onUpdateScore(600 * scoreMultiplier);
+                           onUpdateScore(600 * totalScoreMult);
                        }
                    } else {
                        block.isHit = true;
                        if (block.type === 'finish') handleLevelClear(block.x + 25, block.y);
                        else if (block.content) {
-                           onUpdateScore(block.content === 'COIN' ? 10 : 350);
+                           // 글자 획득 로직
                            if (block.content !== 'COIN') {
-                               onCollect(block.content);
-                               spawnParticle(block.x + 30, block.y - 50, block.content, '#FFFFFF', undefined, 50, 50, 0, -5, 100);
+                               const syllable = block.content;
+                               onCollect(syllable);
+                               spawnParticle(block.x + 30, block.y - 50, syllable, '#FFFFFF', undefined, 50, 50, 0, -5, 100);
+                               
+                               // 현재 사이클에 아직 수집되지 않은 글자라면 수집 처리
+                               if (!collectedInCycle.includes(syllable)) {
+                                   const nextCollected = [...collectedInCycle, syllable];
+                                   setCollectedInCycle(nextCollected);
+                                   onUpdateScore(500 * totalScoreMult); // 글자 획득 큰 점수
+
+                                   // 단어 완성 체크
+                                   const isComplete = wordData.syllables.every(s => nextCollected.includes(s));
+                                   if (isComplete) {
+                                       const newCompletionCount = completionCount + 1;
+                                       setCompletionCount(newCompletionCount);
+                                       setCollectedInCycle([]); // 다음 사이클을 위해 초기화
+                                       playSound('clear');
+                                       spawnParticle(p.x, p.y - 100, `단어 완성! ${newCompletionCount}회!`, '#00FF00', undefined, 200, 50, 0, -2, 120);
+                                       
+                                       // 콤보 달성 시 추가 이펙트
+                                       if (newCompletionCount === 2) {
+                                            spawnParticle(p.x, p.y - 150, `점수 배율 x2!`, '#FFFF00', undefined, 200, 50, 0, -3, 120);
+                                       } else if (newCompletionCount >= 3) {
+                                            spawnParticle(p.x, p.y - 150, `최고 배율 x3!`, '#FF00FF', undefined, 200, 50, 0, -3, 120);
+                                       }
+                                   }
+                               } else {
+                                   onUpdateScore(50 * totalScoreMult); // 중복 글자는 작은 점수
+                               }
                            } else {
+                               // COIN
                                spawnCollectible(block.x + 15, block.y - 40, 'coin', 0, -10);
+                               onUpdateScore(100 * totalScoreMult);
                            }
                            playSound('coin');
                        } else playSound('block');
@@ -406,13 +448,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (hit) { b.vx *= -1; b.x += b.vx; }
         if (p.x < b.x + b.width && p.x + p.width > b.x && p.y < b.y + b.height && p.y + p.height > b.y) {
              if (p.starTimer > 0) {
-                 b.hp = 0; b.isDead = true; onUpdateScore(5000 * scoreMultiplier);
+                 b.hp = 0; b.isDead = true; onUpdateScore(5000 * totalScoreMult);
                  stopBGM(); playSound('clear'); handleLevelClear(b.x + b.width/2, b.y);
              } else {
                  if (p.vy > 0 && p.y + p.height < b.y + b.height * 0.5) {
                      if (b.invulnTimer === 0) {
                          b.hp -= 1; b.invulnTimer = 60; b.flashTimer = 10; p.vy = -14; playSound('stomp'); addShake(12);
-                         if (b.hp <= 0) { b.isDead = true; onUpdateScore(5000 * scoreMultiplier); stopBGM(); handleLevelClear(b.x+b.width/2, b.y); }
+                         if (b.hp <= 0) { b.isDead = true; onUpdateScore(5000 * totalScoreMult); stopBGM(); handleLevelClear(b.x+b.width/2, b.y); }
                      }
                  } else if (p.invulnerableTimer === 0 && b.invulnTimer === 0) {
                       p.invulnerableTimer = 60; p.vy = -6; playSound('damage'); addShake(18);
@@ -429,7 +471,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       e.x += e.vx;
       if (p.x < e.x + e.width && p.x + p.width > e.x && p.y < e.y + e.height && p.y + p.height > e.y) {
          if (p.starTimer > 0 || (p.vy > 0 && p.y + p.height < e.y + e.height * 0.75)) {
-             e.isDead = true; p.vy = -10; onUpdateScore(200 * scoreMultiplier); playSound('stomp');
+             e.isDead = true; p.vy = -10; onUpdateScore(200 * totalScoreMult); playSound('stomp');
          } else if (p.invulnerableTimer === 0) {
               p.invulnerableTimer = 60; p.vy = -5; playSound('damage'); addShake(10);
               setLives(pr => { const nl = pr - 1; if (nl <= 0) handleDeath(); return nl; });
@@ -452,7 +494,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     
     if (shakeRef.current > 0) shakeRef.current *= 0.85;
     if (p.y > GROUND_Y + 800) handleDeath();
-  }, [currentMoveSpeed, currentEnemySpeed, scoreMultiplier, onCollect, onUpdateScore, onGameOver, isBossLevel, isBonusLevel, handleDeath, spawnParticle, spawnCollectible, timeLeft, handleLevelClear, isLandscape]);
+  }, [currentMoveSpeed, currentEnemySpeed, totalScoreMult, collectedInCycle, wordData.syllables, completionCount, onCollect, onUpdateScore, onGameOver, isBossLevel, isBonusLevel, handleDeath, spawnParticle, spawnCollectible, timeLeft, handleLevelClear, isLandscape]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return;
@@ -572,7 +614,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ? (isTablet ? "w-24 h-24 sm:w-28 sm:h-28" : "w-20 h-20 sm:w-24 sm:h-24") 
     : "w-24 h-24 sm:w-36 sm:h-36";
   const hintWidthClass = isLandscape ? "w-[65%]" : "w-[90%]";
-  const hintTopClass = isLandscape ? "top-14" : "top-36";
+  const hintTopClass = isLandscape ? "top-4" : "top-24"; // 위젯 위치 조정
 
   return (
     <div ref={containerRef} className="relative w-full h-full flex items-center justify-center overflow-hidden touch-none select-none bg-black">
@@ -584,23 +626,54 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         />
         
         {/* Overlay Controls */}
-        <button onClick={goHome} className="absolute top-16 right-4 sm:right-8 hover:scale-110 z-40 p-2 active:scale-90 transition-transform">
+        <button onClick={goHome} className="absolute top-4 right-4 sm:right-8 hover:scale-110 z-40 p-2 active:scale-90 transition-transform">
           <img src={ASSETS.ui.btnHome} alt="home" className={`${isLandscape ? 'w-10 h-10 sm:w-16 sm:h-16' : 'w-14 h-14 sm:w-20 sm:h-20'}`} />
         </button>
         
-        <div className={`absolute left-4 sm:left-8 z-40 bg-black/50 p-2 sm:p-3 rounded-2xl text-white font-black shadow-lg backdrop-blur-sm border-2 border-white/20 ${isLandscape ? 'top-16 text-lg sm:text-2xl' : 'top-20 text-xl sm:text-3xl'}`}>
+        <div className={`absolute left-4 sm:left-8 z-40 bg-black/50 p-2 sm:p-3 rounded-2xl text-white font-black shadow-lg backdrop-blur-sm border-2 border-white/20 ${isLandscape ? 'top-4 text-lg sm:text-2xl' : 'top-4 text-xl sm:text-3xl'}`}>
           ⏳ {Math.floor(timeLeft/60)}:{(timeLeft%60).toString().padStart(2,'0')}
         </div>
         
         {playerRef.current.starTimer > 0 && (
-          <div className={`absolute left-4 sm:left-8 z-40 animate-pulse bg-yellow-400 p-2 px-4 rounded-full border-4 border-white font-black shadow-2xl text-black ${isLandscape ? 'top-30 text-sm sm:text-lg' : 'top-36 text-lg sm:text-2xl'}`}>
+          <div className={`absolute left-4 sm:left-8 z-40 animate-pulse bg-yellow-400 p-2 px-4 rounded-full border-4 border-white font-black shadow-2xl text-black ${isLandscape ? 'top-16 text-sm sm:text-lg' : 'top-20 text-lg sm:text-2xl'}`}>
             🌟 무적!
           </div>
         )}
 
-        {/* Word Hint - Optimized for Landscape */}
+        {/* --- [New Feature] HUD Widget: Letter Collection & Target Word --- */}
         <div className={`absolute left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none transition-all duration-300 ${hintWidthClass} ${hintTopClass}`}>
-            <div className={`bg-black/70 text-white px-6 py-2 sm:px-10 sm:py-3 rounded-3xl font-bold border-4 border-white/40 animate-float shadow-2xl text-center backdrop-blur-md ${isLandscape ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>
+            
+            {/* 콤보 배율 표시 */}
+            <div className="flex items-center gap-2 mb-2">
+                <div className={`bg-white/90 text-black px-4 py-1 rounded-full font-bold shadow-lg text-sm sm:text-base border-2 border-black`}>
+                    목표: {wordData.word}
+                </div>
+                {totalScoreMult > 1 && (
+                    <div className={`px-4 py-1 rounded-full font-black shadow-lg text-sm sm:text-base border-2 border-white animate-bounce ${completionCount >= 3 ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' : 'bg-yellow-400 text-black'}`}>
+                        x{totalScoreMult} 점수!
+                    </div>
+                )}
+            </div>
+
+            {/* 글자 수집 슬롯 */}
+            <div className="flex gap-2">
+                {wordData.syllables.map((char, idx) => {
+                    const isCollected = collectedInCycle.includes(char);
+                    return (
+                        <div key={idx} className={`w-12 h-12 sm:w-16 sm:h-16 rounded-xl border-4 flex items-center justify-center text-2xl sm:text-4xl font-black shadow-xl transition-all ${isCollected ? 'bg-green-500 border-white text-white scale-110' : 'bg-black/60 border-gray-500 text-gray-500'}`}>
+                            {isCollected ? char : '?'}
+                        </div>
+                    );
+                })}
+            </div>
+             <div className="mt-2 text-white bg-black/40 px-3 py-1 rounded-lg text-sm font-bold">
+                 완성 횟수: {completionCount}회
+             </div>
+        </div>
+
+        {/* Word Hint (Moved down slightly or kept for extra info) */}
+        <div className={`absolute left-1/2 -translate-x-1/2 z-20 flex flex-col items-center pointer-events-none transition-all duration-300 w-[90%] bottom-24 sm:bottom-32 opacity-80`}>
+            <div className={`bg-black/70 text-white px-4 py-1 rounded-full font-bold border-2 border-white/20 text-center backdrop-blur-md text-sm sm:text-base`}>
                 💡 {wordData.hint}
             </div>
         </div>
